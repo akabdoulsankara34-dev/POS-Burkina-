@@ -225,6 +225,47 @@
                     <button onclick="saveSettings()" class="btn btn-primary">Enregistrer</button>
                 </div>
 
+                <!-- Section Upgrade de Pack -->
+                <div class="card" style="margin-top: 20px;">
+                    <h3>🚀 Changer de pack</h3>
+                    <p style="color:#666; margin-bottom:15px;">Pack actuel : <strong id="currentPackSettings">-</strong></p>
+                    
+                    <div style="display:flex; gap:15px; flex-wrap:wrap;">
+                        <!-- Pack Business -->
+                        <div class="pack-card" id="packCard-business" style="flex:1; min-width:200px; border:2px solid #3498db; border-radius:10px; padding:15px; text-align:center;">
+                            <div style="font-size:24px;">💼</div>
+                            <h4 style="margin:8px 0; color:#3498db;">Business</h4>
+                            <div style="font-size:20px; font-weight:bold; color:#2c3e50;">5 000 FCFA<span style="font-size:13px; font-weight:normal;">/mois</span></div>
+                            <ul style="text-align:left; margin:12px 0; padding-left:18px; font-size:13px; color:#555;">
+                                <li>Gestion des stocks</li>
+                                <li>Tableau de bord</li>
+                                <li>Alertes stock faible</li>
+                                <li>Multi-utilisateurs</li>
+                            </ul>
+                            <button onclick="upgradePack('business')" class="btn btn-primary" style="width:100%;" id="upgradeBtn-business">
+                                Passer au Business
+                            </button>
+                        </div>
+
+                        <!-- Pack Premium -->
+                        <div class="pack-card" id="packCard-premium" style="flex:1; min-width:200px; border:2px solid #f39c12; border-radius:10px; padding:15px; text-align:center;">
+                            <div style="font-size:24px;">⭐</div>
+                            <h4 style="margin:8px 0; color:#f39c12;">Premium</h4>
+                            <div style="font-size:20px; font-weight:bold; color:#2c3e50;">15 000 FCFA<span style="font-size:13px; font-weight:normal;">/mois</span></div>
+                            <ul style="text-align:left; margin:12px 0; padding-left:18px; font-size:13px; color:#555;">
+                                <li>Tout le Business</li>
+                                <li>Multi-boutiques</li>
+                                <li>Export CSV</li>
+                                <li>Graphiques avancés</li>
+                                <li>QR Code factures</li>
+                            </ul>
+                            <button onclick="upgradePack('premium')" class="btn" style="width:100%; background:#f39c12; color:white;" id="upgradeBtn-premium">
+                                Passer au Premium
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Multi-boutiques PREMIUM -->
                 <div id="multiStoreSection" class="card" style="display: none;">
                     <h3>Gestion des boutiques</h3>

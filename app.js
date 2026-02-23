@@ -659,9 +659,87 @@ async function loadSettingsForm() {
             document.getElementById('settingPhone').value    = data.phone    || '';
             document.getElementById('settingAddress').value  = data.address  || '';
         }
+
+        // Afficher le pack actuel dans la section upgrade
+        const packLabel = currentPack.charAt(0).toUpperCase() + currentPack.slice(1);
+        const el = document.getElementById('currentPackSettings');
+        if (el) el.textContent = packLabel;
+
+        // Griser le bouton du pack actuel et des packs inférieurs
+        updateUpgradeButtons();
+
         if (canAccessFeature(currentPack, 'multi_boutiques')) loadStores();
     } catch (error) {
         console.error('❌ Erreur chargement paramètres:', error);
+    }
+}
+
+function updateUpgradeButtons() {
+    const packOrder = ['starter', 'business', 'premium'];
+    const currentIndex = packOrder.indexOf(currentPack);
+
+    ['business', 'premium'].forEach(pack => {
+        const btn  = document.getElementById(`upgradeBtn-${pack}`);
+        const card = document.getElementById(`packCard-${pack}`);
+        if (!btn || !card) return;
+
+        const packIndex = packOrder.indexOf(pack);
+
+        if (packIndex <= currentIndex) {
+            // Pack déjà actif ou inférieur
+            btn.disabled = true;
+            btn.textContent = packIndex === currentIndex ? '✅ Pack actuel' : '✓ Déjà inclus';
+            btn.style.opacity = '0.5';
+            btn.style.cursor = 'not-allowed';
+            card.style.opacity = '0.6';
+        } else {
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            btn.style.cursor = 'pointer';
+            card.style.opacity = '1';
+        }
+    });
+}
+
+async function upgradePack(newPack) {
+    const prices = { business: '5 000', premium: '15 000' };
+    const names  = { business: 'Business', premium: 'Premium' };
+
+    const confirmed = confirm(
+        `⚠️ Passage au pack ${names[newPack]}\n\n` +
+        `Montant : ${prices[newPack]} FCFA / mois\n\n` +
+        `Veuillez effectuer le paiement par Mobile Money ou virement, puis cliquez OK pour activer votre pack.\n\n` +
+        `Confirmer l'activation du pack ${names[newPack]} ?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+        await db.collection('users').doc(currentUser.uid).update({ pack: newPack });
+
+        // Mettre à jour l'état local
+        currentPack = newPack;
+
+        // Rafraîchir toute l'interface
+        document.getElementById('currentPack').textContent =
+            newPack.charAt(0).toUpperCase() + newPack.slice(1);
+
+        document.getElementById('userInfo').innerHTML = `
+            <span>${currentUser.email}</span>
+            <span class="badge badge-${newPack}">${newPack.toUpperCase()}</span>
+        `;
+
+        updateUIBasedOnPack();
+        updateUpgradeButtons();
+
+        const el = document.getElementById('currentPackSettings');
+        if (el) el.textContent = names[newPack];
+
+        showNotification(`🎉 Pack ${names[newPack]} activé avec succès !`, 'success');
+
+    } catch (error) {
+        console.error('❌ Erreur upgrade pack:', error);
+        showNotification('Erreur lors du changement de pack : ' + error.message, 'error');
     }
 }
 
