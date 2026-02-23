@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <title>POS-Burkina  Solution de caisse pour petits commerces</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-firestore-compat.js"></script>
+    <!-- Chart.js pour les graphiques -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- QR Code génération -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <div class="logo">POS<span>Africa</span></div>
+            <div id="userInfo" class="user-info"></div>
+            <div class="nav-links">
+                <button onclick="logout()" class="btn btn-danger" style="display: none;" id="logoutBtn">Déconnexion</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Page de connexion -->
+        <div id="authPage" class="card" style="max-width: 400px; margin: 50px auto;">
+            <div class="card-header">
+                <h2>Connexion</h2>
+            </div>
+            <div id="loginForm">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="loginEmail" class="form-control" placeholder="email@exemple.com">
+                </div>
+                <div class="form-group">
+                    <label>Mot de passe</label>
+                    <input type="password" id="loginPassword" class="form-control" placeholder="••••••••">
+                </div>
+                <button onclick="login()" class="btn btn-primary" style="width: 100%;">Se connecter</button>
+                <p style="text-align: center; margin-top: 15px;">
+                    <a href="#" onclick="showRegister()">Créer un compte</a>
+                </p>
+            </div>
+            <div id="registerForm" style="display: none;">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="registerEmail" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Mot de passe</label>
+                    <input type="password" id="registerPassword" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Nom de la boutique</label>
+                    <input type="text" id="shopName" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Pack choisi</label>
+                    <select id="packChoice" class="form-control">
+                        <option value="starter">Starter - Gratuit</option>
+                        <option value="business">Business - 5000 FCFA/mois</option>
+                        <option value="premium">Premium - 15000 FCFA/mois</option>
+                    </select>
+                </div>
+                <button onclick="register()" class="btn btn-primary" style="width: 100%;">Créer mon compte</button>
+                <p style="text-align: center; margin-top: 15px;">
+                    <a href="#" onclick="showLogin()">Déjà un compte ?</a>
+                </p>
+            </div>
+        </div>
+
+        <!-- Interface POS (visible après connexion) -->
+        <div id="posInterface" style="display: none;">
+            <!-- Navigation par onglets selon le pack -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="nav-tabs" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button onclick="showTab('pos')" class="btn btn-primary">Point de vente</button>
+                    <button onclick="showTab('products')" class="btn" id="productsTabBtn">Produits</button>
+                    <button onclick="showTab('history')" class="btn">Historique</button>
+                    <button onclick="showTab('dashboard')" class="btn" id="dashboardTabBtn">Tableau de bord</button>
+                    <button onclick="showTab('settings')" class="btn">Paramètres</button>
+                </div>
+            </div>
+
+            <!-- Indicateur de pack -->
+            <div id="packIndicator" class="card" style="background: var(--primary-color); color: white;">
+                <span>Pack actuel : <span id="currentPack">Starter</span></span>
+            </div>
+
+            <!-- Section POS -->
+            <div id="posSection" class="tab-content">
+                <div class="pos-container">
+                    <!-- Liste des produits -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Produits disponibles</h3>
+                            <input type="text" id="searchProduct" class="form-control" placeholder="Rechercher..." style="width: 200px;">
+                        </div>
+                        <div id="productsList" class="products-grid">
+                            <!-- Produits chargés dynamiquement -->
+                        </div>
+                    </div>
+
+                    <!-- Panier -->
+                    <div class="cart">
+                        <h3>Panier</h3>
+                        <div id="cartItems" class="cart-items">
+                            <!-- Articles du panier -->
+                        </div>
+                        <div class="cart-total">
+                            Total: <span id="cartTotal">0 FCFA</span>
+                        </div>
+                        <button onclick="checkout()" class="btn btn-success" style="width: 100%;" id="checkoutBtn">
+                            Valider la vente
+                        </button>
+                        <button onclick="printLastReceipt()" class="btn" style="width: 100%; margin-top: 10px;" id="printBtn">
+                            Réimprimer dernier ticket
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section Produits (BUSINESS+) -->
+            <div id="productsSection" class="tab-content" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Gestion des produits</h3>
+                        <button onclick="showAddProductModal()" class="btn btn-success">+ Nouveau produit</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="productsTable">
+                            <thead>
+                                <tr>
+                                    <th>Nom</th>
+                                    <th>Prix</th>
+                                    <th>Stock</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="productsTableBody">
+                                <!-- Produits chargés dynamiquement -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section Historique -->
+            <div id="historySection" class="tab-content" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Historique des ventes</h3>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="date" id="historyDate" class="form-control">
+                            <button onclick="exportSales()" class="btn" id="exportBtn">Exporter</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="historyTable">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>N° Facture</th>
+                                    <th>Montant</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTableBody">
+                                <!-- Historique chargé dynamiquement -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section Dashboard (BUSINESS+) -->
+            <div id="dashboardSection" class="tab-content" style="display: none;">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="dailySales">0 FCFA</div>
+                        <div class="stat-label">Chiffre du jour</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="monthlySales">0 FCFA</div>
+                        <div class="stat-label">Chiffre du mois</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalSales">0</div>
+                        <div class="stat-label">Ventes totales</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="lowStock">0</div>
+                        <div class="stat-label">Produits stock faible</div>
+                    </div>
+                </div>
+                
+                <!-- Graphiques PREMIUM -->
+                <div id="premiumCharts" style="display: none;">
+                    <div class="card">
+                        <canvas id="salesChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section Paramètres -->
+            <div id="settingsSection" class="tab-content" style="display: none;">
+                <div class="card">
+                    <h3>Paramètres de la boutique</h3>
+                    <div class="form-group">
+                        <label>Nom de la boutique</label>
+                        <input type="text" id="settingShopName" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Téléphone</label>
+                        <input type="tel" id="settingPhone" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Adresse</label>
+                        <input type="text" id="settingAddress" class="form-control">
+                    </div>
+                    <button onclick="saveSettings()" class="btn btn-primary">Enregistrer</button>
+                </div>
+
+                <!-- Multi-boutiques PREMIUM -->
+                <div id="multiStoreSection" class="card" style="display: none;">
+                    <h3>Gestion des boutiques</h3>
+                    <div id="storesList"></div>
+                    <button onclick="addStore()" class="btn btn-success">+ Ajouter une boutique</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal d'ajout produit -->
+    <div id="productModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+        <div style="background: white; max-width: 500px; margin: 50px auto; padding: 20px; border-radius: var(--border-radius);">
+            <h3>Ajouter un produit</h3>
+            <div class="form-group">
+                <label>Nom du produit</label>
+                <input type="text" id="productName" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>Prix (FCFA)</label>
+                <input type="number" id="productPrice" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>Stock initial</label>
+                <input type="number" id="productStock" class="form-control">
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button onclick="closeProductModal()" class="btn">Annuler</button>
+                <button onclick="saveProduct()" class="btn btn-success">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="firebase-config.js"></script>
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
