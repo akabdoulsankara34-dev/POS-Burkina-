@@ -1,17 +1,54 @@
 # POS Africa - Solution de caisse pour commerces africains
 
-## 🚀 Déploiement sur Vercel
+## 🚀 Aperçu
+POS Africa est une solution de caisse (Point of Sale) complète, conçue spécialement pour les petits commerces en Afrique (alimentations, boutiques, mini marchés, quincailleries).
 
-### Prérequis
-- Compte Firebase (gratuit)
-- Compte Vercel (gratuit via GitHub)
+## ✨ Fonctionnalités
 
-### Configuration Firebase
+### 🟢 Pack STARTER (Gratuit)
+- Point de vente simple
+- Enregistrement des ventes
+- Historique basique
+- Impression de tickets (format 58mm)
 
-1. Créez un projet Firebase sur https://console.firebase.google.com
-2. Activez Authentication (Email/Password)
-3. Créez une base de données Firestore
-4. Dans Règles Firestore, ajoutez :
+### 🔵 Pack BUSINESS (5 000 FCFA/mois)
+- ✅ Tout le pack STARTER
+- ✅ Gestion de stock automatique
+- ✅ Dashboard avec statistiques
+- ✅ Alertes stock faible
+- ✅ Multi-utilisateurs (3 max)
+
+### 🔴 Pack PREMIUM (15 000 FCFA/mois)
+- ✅ Tout le pack BUSINESS
+- ✅ Multi-boutiques
+- ✅ QR code sur factures
+- ✅ Notifications WhatsApp
+- ✅ Export CSV/PDF
+- ✅ Graphiques avancés
+
+## 🛠 Technologies utilisées
+- HTML5 / CSS3 / JavaScript
+- Firebase (Authentication + Firestore)
+- Chart.js pour les graphiques
+- QRCode.js pour les codes QR
+
+## 📦 Installation
+
+1. **Créer un projet Firebase**
+   - Allez sur https://console.firebase.google.com
+   - Créez un nouveau projet
+   - Activez "Authentication" (Email/Password)
+   - Créez une base "Firestore"
+
+2. **Configurer Firebase**
+   - Dans `firebase-config.js`, remplacez les identifiants par les vôtres
+
+3. **Déployer sur Vercel**
+   - Poussez le code sur GitHub
+   - Connectez Vercel à votre repository
+   - Déployez !
+
+## 🔧 Configuration Firestore
 
 ```javascript
 rules_version = '2';

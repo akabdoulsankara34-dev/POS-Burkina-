@@ -5,6 +5,13 @@ const PACKS = {
     PREMIUM: 'premium'
 };
 
+// Tarifs des packs (en FCFA)
+const PACK_PRICES = {
+    starter: 0,
+    business: 5000,
+    premium: 15000
+};
+
 // Fonction pour déterminer le pack d'un utilisateur
 async function getUserPack(userId) {
     try {
@@ -14,7 +21,7 @@ async function getUserPack(userId) {
         }
         return PACKS.STARTER;
     } catch (error) {
-        console.error('Erreur récupération pack:', error);
+        console.error('❌ Erreur récupération pack:', error);
         return PACKS.STARTER;
     }
 }
@@ -22,18 +29,18 @@ async function getUserPack(userId) {
 // Vérification des fonctionnalités par pack
 function canAccessFeature(userPack, feature) {
     const features = {
-        // Pack STARTER
+        // Pack STARTER (fonctionnalités de base)
         'pos_simple': [PACKS.STARTER, PACKS.BUSINESS, PACKS.PREMIUM],
         'historique_simple': [PACKS.STARTER, PACKS.BUSINESS, PACKS.PREMIUM],
         'impression_base': [PACKS.STARTER, PACKS.BUSINESS, PACKS.PREMIUM],
         
-        // Pack BUSINESS
+        // Pack BUSINESS (fonctionnalités intermédiaires)
         'gestion_stock': [PACKS.BUSINESS, PACKS.PREMIUM],
         'dashboard_stats': [PACKS.BUSINESS, PACKS.PREMIUM],
         'multi_utilisateurs': [PACKS.BUSINESS, PACKS.PREMIUM],
         'alertes_stock': [PACKS.BUSINESS, PACKS.PREMIUM],
         
-        // Pack PREMIUM
+        // Pack PREMIUM (fonctionnalités avancées)
         'multi_boutiques': [PACKS.PREMIUM],
         'qr_code': [PACKS.PREMIUM],
         'whatsapp_notif': [PACKS.PREMIUM],

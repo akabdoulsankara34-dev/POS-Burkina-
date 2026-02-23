@@ -1,3 +1,7 @@
+// ===========================================
+// POS AFRICA - APPLICATION PRINCIPALE
+// ===========================================
+
 // État global de l'application
 let currentUser = null;
 let currentPack = PACKS.STARTER;
@@ -5,34 +9,165 @@ let cart = [];
 let currentShop = null;
 let lastReceipt = null;
 
-// Initialisation
+// ===========================================
+// INITIALISATION
+// ===========================================
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('🚀 POS Africa démarré');
+    
     // Vérifier session utilisateur
     auth.onAuthStateChanged(async (user) => {
+        console.log('👤 Auth state:', user ? 'Connecté' : 'Déconnecté');
+        
         if (user) {
+            // Utilisateur connecté
             currentUser = user;
+            
+            // Cacher la page de connexion, afficher le POS
+            document.getElementById('authPage').style.display = 'none';
+            document.getElementById('posInterface').style.display = 'block';
+            document.getElementById('logoutBtn').style.display = 'inline-block';
+            
+            // Charger les données utilisateur
             await loadUserData(user.uid);
-            showPOSInterface();
+            
+            // Charger les produits et l'historique
             loadProducts();
             loadHistory();
             
-            if (canAccessFeature(currentPack, 'gestion_stock')) {
+            // Vérifier les fonctionnalités selon le pack
+            if (canAccessFeature(currentPack, 'alertes_stock')) {
                 checkLowStock();
             }
             
             if (canAccessFeature(currentPack, 'dashboard_stats')) {
                 loadDashboard();
             }
+            
+            showNotification('Connexion réussie ! Bienvenue 👋', 'success');
         } else {
+            // Utilisateur déconnecté
             showAuthPage();
         }
     });
 });
 
+// ===========================================
+// AUTHENTIFICATION
+// ===========================================
+
+// Fonction de connexion
+async function login() {
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    
+    if (!email || !password) {
+        showNotification('Veuillez remplir email et mot de passe', 'error');
+        return;
+    }
+    
+    try {
+        showNotification('Connexion en cours...', 'info');
+        
+        await auth.signInWithEmailAndPassword(email, password);
+        
+        // La redirection se fait automatiquement via onAuthStateChanged
+        
+    } catch (error) {
+        let message = 'Erreur de connexion';
+        if (error.code === 'auth/user-not-found') message = 'Email non trouvé';
+        if (error.code === 'auth/wrong-password') message = 'Mot de passe incorrect';
+        if (error.code === 'auth/invalid-email') message = 'Email invalide';
+        if (error.code === 'auth/too-many-requests') message = 'Trop de tentatives, réessayez plus tard';
+        
+        showNotification(message, 'error');
+        console.error('❌ Erreur login:', error);
+    }
+}
+
+// Fonction d'inscription
+async function register() {
+    const email = document.getElementById('registerEmail').value;
+    const password = document.getElementById('registerPassword').value;
+    const shopName = document.getElementById('shopName').value;
+    const pack = document.getElementById('packChoice').value;
+    
+    if (!email || !password || !shopName) {
+        showNotification('Veuillez remplir tous les champs', 'error');
+        return;
+    }
+    
+    if (password.length < 6) {
+        showNotification('Le mot de passe doit contenir au moins 6 caractères', 'error');
+        return;
+    }
+    
+    try {
+        showNotification('Création du compte...', 'info');
+        
+        // Créer l'utilisateur
+        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+        const user = userCredential.user;
+        
+        // Créer document utilisateur dans Firestore
+        await db.collection('users').doc(user.uid).set({
+            email: email,
+            pack: pack,
+            shopName: shopName,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        // Créer une boutique par défaut
+        await db.collection('shops').add({
+            userId: user.uid,
+            name: shopName,
+            address: '',
+            phone: '',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        showNotification('Compte créé avec succès !', 'success');
+        
+    } catch (error) {
+        let message = 'Erreur création compte';
+        if (error.code === 'auth/email-already-in-use') message = 'Cet email est déjà utilisé';
+        if (error.code === 'auth/invalid-email') message = 'Email invalide';
+        if (error.code === 'auth/weak-password') message = 'Mot de passe trop faible';
+        
+        showNotification(message, 'error');
+        console.error('❌ Erreur register:', error);
+    }
+}
+
+// Déconnexion
+function logout() {
+    auth.signOut()
+        .then(() => {
+            showNotification('Déconnexion réussie', 'success');
+            showAuthPage();
+            
+            // Vider le panier
+            cart = [];
+            updateCartDisplay();
+            
+            // Vider les champs
+            document.getElementById('loginEmail').value = '';
+            document.getElementById('loginPassword').value = '';
+        })
+        .catch((error) => {
+            showNotification('Erreur déconnexion', 'error');
+        });
+}
+
+// ===========================================
+// GESTION UTILISATEUR
+// ===========================================
+
 // Charger données utilisateur
 async function loadUserData(userId) {
     try {
         const userDoc = await db.collection('users').doc(userId).get();
+        
         if (!userDoc.exists) {
             // Créer document utilisateur si inexistant
             await db.collection('users').doc(userId).set({
@@ -49,6 +184,12 @@ async function loadUserData(userId) {
             
             // Mettre à jour l'affichage selon le pack
             updateUIBasedOnPack();
+            
+            // Mettre à jour l'info utilisateur
+            document.getElementById('userInfo').innerHTML = `
+                <span>${currentUser.email}</span>
+                <span class="badge badge-${currentPack}">${currentPack.toUpperCase()}</span>
+            `;
         }
         
         // Charger la boutique active
@@ -58,24 +199,18 @@ async function loadUserData(userId) {
             .get();
             
         if (!shopsSnapshot.empty) {
-            currentShop = shopsSnapshot.docs[0].data();
+            currentShop = {
+                id: shopsSnapshot.docs[0].id,
+                ...shopsSnapshot.docs[0].data()
+            };
         }
     } catch (error) {
-        console.error('Erreur chargement utilisateur:', error);
+        console.error('❌ Erreur chargement utilisateur:', error);
     }
 }
 
 // Mise à jour UI selon pack
 function updateUIBasedOnPack() {
-    const packBadge = document.createElement('span');
-    packBadge.className = `badge badge-${currentPack}`;
-    packBadge.textContent = currentPack.toUpperCase();
-    
-    document.getElementById('userInfo').innerHTML = `
-        ${currentUser.email} 
-        ${packBadge.outerHTML}
-    `;
-    
     // Afficher/cacher fonctionnalités selon pack
     document.getElementById('productsTabBtn').style.display = 
         canAccessFeature(currentPack, 'gestion_stock') ? 'inline-block' : 'none';
@@ -85,69 +220,28 @@ function updateUIBasedOnPack() {
     
     if (canAccessFeature(currentPack, 'exports')) {
         document.getElementById('exportBtn').style.display = 'inline-block';
+    } else {
+        document.getElementById('exportBtn').style.display = 'none';
     }
     
     if (canAccessFeature(currentPack, 'multi_boutiques')) {
         document.getElementById('multiStoreSection').style.display = 'block';
+    } else {
+        document.getElementById('multiStoreSection').style.display = 'none';
     }
     
     if (canAccessFeature(currentPack, 'graphiques_avances')) {
         document.getElementById('premiumCharts').style.display = 'block';
+    } else {
+        document.getElementById('premiumCharts').style.display = 'none';
     }
 }
 
-// Authentification
-async function login() {
-    const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
-    
-    try {
-        await auth.signInWithEmailAndPassword(email, password);
-        showNotification('Connexion réussie', 'success');
-    } catch (error) {
-        showNotification('Erreur de connexion: ' + error.message, 'error');
-    }
-}
+// ===========================================
+// GESTION DES PRODUITS
+// ===========================================
 
-async function register() {
-    const email = document.getElementById('registerEmail').value;
-    const password = document.getElementById('registerPassword').value;
-    const shopName = document.getElementById('shopName').value;
-    const pack = document.getElementById('packChoice').value;
-    
-    try {
-        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-        const user = userCredential.user;
-        
-        // Créer document utilisateur
-        await db.collection('users').doc(user.uid).set({
-            email: email,
-            pack: pack,
-            shopName: shopName,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        
-        // Créer boutique par défaut
-        await db.collection('shops').add({
-            userId: user.uid,
-            name: shopName,
-            address: '',
-            phone: '',
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        
-        showNotification('Compte créé avec succès', 'success');
-    } catch (error) {
-        showNotification('Erreur création compte: ' + error.message, 'error');
-    }
-}
-
-function logout() {
-    auth.signOut();
-    showAuthPage();
-}
-
-// Gestion des produits
+// Charger les produits
 async function loadProducts() {
     if (!currentUser) return;
     
@@ -168,13 +262,21 @@ async function loadProducts() {
         displayProducts(products);
         displayProductsTable(products);
     } catch (error) {
-        console.error('Erreur chargement produits:', error);
+        console.error('❌ Erreur chargement produits:', error);
     }
 }
 
+// Afficher les produits en grille
 function displayProducts(products) {
     const container = document.getElementById('productsList');
+    if (!container) return;
+    
     container.innerHTML = '';
+    
+    if (products.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #999;">Aucun produit. Ajoutez-en dans l\'onglet "Produits"</p>';
+        return;
+    }
     
     products.forEach(product => {
         const card = document.createElement('div');
@@ -185,18 +287,24 @@ function displayProducts(products) {
             <div class="product-name">${product.name}</div>
             <div class="product-price">${product.price.toLocaleString()} FCFA</div>
             ${canAccessFeature(currentPack, 'gestion_stock') ? 
-                `<div class="product-stock">Stock: ${product.stock}</div>` : ''}
+                `<div class="product-stock">Stock: ${product.stock || 0}</div>` : ''}
         `;
         
         container.appendChild(card);
     });
 }
 
+// Afficher les produits en tableau
 function displayProductsTable(products) {
     const tbody = document.getElementById('productsTableBody');
     if (!tbody) return;
     
     tbody.innerHTML = '';
+    
+    if (products.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">Aucun produit</td></tr>';
+        return;
+    }
     
     products.forEach(product => {
         const row = document.createElement('tr');
@@ -204,8 +312,8 @@ function displayProductsTable(products) {
             <td>${product.name}</td>
             <td>${product.price.toLocaleString()} FCFA</td>
             <td>
-                <span style="color: ${product.stock < 10 ? 'red' : 'green'};">
-                    ${product.stock}
+                <span style="color: ${product.stock < 5 ? 'red' : 'green'}; font-weight: bold;">
+                    ${product.stock || 0}
                 </span>
             </td>
             <td>
@@ -217,10 +325,11 @@ function displayProductsTable(products) {
     });
 }
 
+// Sauvegarder un produit
 async function saveProduct() {
     const name = document.getElementById('productName').value;
     const price = parseFloat(document.getElementById('productPrice').value);
-    const stock = parseInt(document.getElementById('productStock').value);
+    const stock = parseInt(document.getElementById('productStock').value) || 0;
     
     if (!name || !price) {
         showNotification('Veuillez remplir tous les champs', 'error');
@@ -232,7 +341,7 @@ async function saveProduct() {
             userId: currentUser.uid,
             name: name,
             price: price,
-            stock: stock || 0,
+            stock: stock,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
         
@@ -244,7 +353,30 @@ async function saveProduct() {
     }
 }
 
-// Gestion du panier
+// Modifier un produit
+async function editProduct(productId) {
+    // À implémenter
+    showNotification('Fonctionnalité à venir', 'info');
+}
+
+// Supprimer un produit
+async function deleteProduct(productId) {
+    if (confirm('Êtes-vous sûr de vouloir supprimer ce produit ?')) {
+        try {
+            await db.collection('products').doc(productId).delete();
+            showNotification('Produit supprimé', 'success');
+            loadProducts();
+        } catch (error) {
+            showNotification('Erreur: ' + error.message, 'error');
+        }
+    }
+}
+
+// ===========================================
+// GESTION DU PANIER
+// ===========================================
+
+// Ajouter au panier
 function addToCart(product) {
     // Vérifier stock si pack BUSINESS+
     if (canAccessFeature(currentPack, 'gestion_stock') && product.stock <= 0) {
@@ -270,14 +402,24 @@ function addToCart(product) {
     }
     
     updateCartDisplay();
+    showNotification(`${product.name} ajouté au panier`, 'success');
 }
 
+// Mettre à jour l'affichage du panier
 function updateCartDisplay() {
     const cartContainer = document.getElementById('cartItems');
     const totalSpan = document.getElementById('cartTotal');
     
+    if (!cartContainer || !totalSpan) return;
+    
     let total = 0;
     cartContainer.innerHTML = '';
+    
+    if (cart.length === 0) {
+        cartContainer.innerHTML = '<p style="text-align: center; color: #999;">Panier vide</p>';
+        totalSpan.textContent = '0 FCFA';
+        return;
+    }
     
     cart.forEach((item, index) => {
         total += item.price * item.quantity;
@@ -291,7 +433,7 @@ function updateCartDisplay() {
             </div>
             <div>
                 ${(item.price * item.quantity).toLocaleString()} FCFA
-                <button onclick="removeFromCart(${index})" style="border: none; background: none; cursor: pointer;">❌</button>
+                <button onclick="removeFromCart(${index})" style="border: none; background: none; cursor: pointer; font-size: 18px;">❌</button>
             </div>
         `;
         
@@ -301,12 +443,19 @@ function updateCartDisplay() {
     totalSpan.textContent = total.toLocaleString() + ' FCFA';
 }
 
+// Retirer du panier
 function removeFromCart(index) {
+    const removed = cart[index];
     cart.splice(index, 1);
     updateCartDisplay();
+    showNotification(`${removed.name} retiré du panier`, 'info');
 }
 
-// Validation de vente
+// ===========================================
+// VALIDATION DES VENTES
+// ===========================================
+
+// Valider la vente
 async function checkout() {
     if (cart.length === 0) {
         showNotification('Panier vide', 'error');
@@ -316,6 +465,8 @@ async function checkout() {
     const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     
     try {
+        showNotification('Enregistrement de la vente...', 'info');
+        
         // Créer la vente
         const sale = {
             userId: currentUser.uid,
@@ -339,20 +490,17 @@ async function checkout() {
             for (const item of cart) {
                 const productRef = db.collection('products').doc(item.id);
                 const productDoc = await productRef.get();
-                const currentStock = productDoc.data().stock;
-                await productRef.update({
-                    stock: currentStock - item.quantity
-                });
+                if (productDoc.exists) {
+                    const currentStock = productDoc.data().stock || 0;
+                    await productRef.update({
+                        stock: Math.max(0, currentStock - item.quantity)
+                    });
+                }
             }
         }
         
         // Générer ticket
         await generateReceipt(saleRef.id);
-        
-        // Notification WhatsApp (PREMIUM)
-        if (canAccessFeature(currentPack, 'whatsapp_notif')) {
-            sendWhatsAppNotification(sale);
-        }
         
         // Vider le panier
         cart = [];
@@ -364,100 +512,104 @@ async function checkout() {
         if (canAccessFeature(currentPack, 'dashboard_stats')) {
             loadDashboard();
         }
+        
+        if (canAccessFeature(currentPack, 'alertes_stock')) {
+            checkLowStock();
+        }
+        
     } catch (error) {
-        console.error('Erreur vente:', error);
+        console.error('❌ Erreur vente:', error);
         showNotification('Erreur lors de la vente', 'error');
     }
 }
 
-// Génération ticket
+// ===========================================
+// GÉNÉRATION DE TICKET
+// ===========================================
+
+// Générer un ticket de caisse
 async function generateReceipt(saleId) {
-    const sale = await db.collection('sales').doc(saleId).get();
-    const saleData = sale.data();
-    
-    const receiptWindow = window.open('', '_blank');
-    
-    let receiptHTML = `
-        <html>
-        <head>
-            <title>Ticket de caisse</title>
-            <style>
-                body { font-family: 'Courier New', monospace; margin: 0; padding: 20px; }
-                .receipt { max-width: 300px; margin: 0 auto; }
-                .header { text-align: center; margin-bottom: 20px; }
-                .items { margin-bottom: 20px; }
-                .item { display: flex; justify-content: space-between; margin-bottom: 5px; }
-                .total { font-size: 18px; font-weight: bold; text-align: right; border-top: 2px dashed #000; padding-top: 10px; }
-                .footer { text-align: center; margin-top: 20px; font-size: 12px; }
-                hr { border: 1px dashed #000; }
-            </style>
-        </head>
-        <body>
-            <div class="receipt">
-                <div class="header">
-                    <h2>${currentShop?.name || 'Ma boutique'}</h2>
-                    <p>${new Date().toLocaleString()}</p>
-    `;
-    
-    // Ajouter QR code pour PREMIUM
-    if (canAccessFeature(currentPack, 'qr_code')) {
-        receiptHTML += `<div id="qrcode"></div>`;
-    }
-    
-    receiptHTML += `
-                </div>
-                <hr>
-                <div class="items">
-    `;
-    
-    saleData.items.forEach(item => {
-        receiptHTML += `
-            <div class="item">
-                <span>${item.name} x${item.quantity}</span>
-                <span>${(item.price * item.quantity).toLocaleString()} FCFA</span>
-            </div>
+    try {
+        const saleDoc = await db.collection('sales').doc(saleId).get();
+        if (!saleDoc.exists) return;
+        
+        const saleData = saleDoc.data();
+        
+        const receiptWindow = window.open('', '_blank');
+        
+        let receiptHTML = `
+            <html>
+            <head>
+                <title>Ticket de caisse</title>
+                <style>
+                    body { font-family: 'Courier New', monospace; margin: 0; padding: 20px; font-size: 14px; }
+                    .receipt { max-width: 300px; margin: 0 auto; }
+                    .header { text-align: center; margin-bottom: 20px; }
+                    .header h2 { margin: 0; font-size: 18px; }
+                    .header p { margin: 5px 0; font-size: 12px; }
+                    .items { margin-bottom: 20px; }
+                    .item { display: flex; justify-content: space-between; margin-bottom: 5px; }
+                    .total { font-size: 18px; font-weight: bold; text-align: right; border-top: 2px dashed #000; padding-top: 10px; margin-top: 10px; }
+                    .footer { text-align: center; margin-top: 20px; font-size: 12px; }
+                    hr { border: 1px dashed #000; }
+                </style>
+            </head>
+            <body>
+                <div class="receipt">
+                    <div class="header">
+                        <h2>${currentShop?.name || 'Ma boutique'}</h2>
+                        <p>${new Date().toLocaleString()}</p>
+                        ${saleData.invoiceNumber ? `<p>Facture: ${saleData.invoiceNumber}</p>` : ''}
+                    </div>
+                    <hr>
+                    <div class="items">
         `;
-    });
-    
-    receiptHTML += `
+        
+        saleData.items.forEach(item => {
+            receiptHTML += `
+                <div class="item">
+                    <span>${item.name} x${item.quantity}</span>
+                    <span>${(item.price * item.quantity).toLocaleString()} FCFA</span>
                 </div>
-                <hr>
-                <div class="total">
-                    Total: ${saleData.total.toLocaleString()} FCFA
-                </div>
-                <div class="footer">
-                    <p>Merci de votre visite!</p>
-                    <p>${new Date().toLocaleDateString()}</p>
-                </div>
-            </div>
-    `;
-    
-    if (canAccessFeature(currentPack, 'qr_code')) {
+            `;
+        });
+        
         receiptHTML += `
-            <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
-            <script>
-                QRCode.toCanvas(document.getElementById('qrcode'), '${saleData.invoiceNumber}', function(error) {
-                    if (error) console.error(error);
-                });
-            </script>
+                    </div>
+                    <hr>
+                    <div class="total">
+                        Total: ${saleData.total.toLocaleString()} FCFA
+                    </div>
+                    <div class="footer">
+                        <p>Merci de votre visite!</p>
+                        <p>${new Date().toLocaleDateString()}</p>
+                    </div>
+                </div>
+            </body>
+            </html>
         `;
+        
+        receiptWindow.document.write(receiptHTML);
+        receiptWindow.document.close();
+        receiptWindow.print();
+        
+        lastReceipt = saleData;
+        
+    } catch (error) {
+        console.error('❌ Erreur génération ticket:', error);
     }
-    
-    receiptHTML += `</body></html>`;
-    
-    receiptWindow.document.write(receiptHTML);
-    receiptWindow.document.close();
-    receiptWindow.print();
-    
-    lastReceipt = saleData;
 }
 
-// Charger historique
+// ===========================================
+// HISTORIQUE DES VENTES
+// ===========================================
+
+// Charger l'historique
 async function loadHistory() {
     if (!currentUser) return;
     
     try {
-        let query = db.collection('sales')
+        const query = db.collection('sales')
             .where('userId', '==', currentUser.uid)
             .orderBy('date', 'desc')
             .limit(50);
@@ -465,7 +617,14 @@ async function loadHistory() {
         const snapshot = await query.get();
         const tbody = document.getElementById('historyTableBody');
         
+        if (!tbody) return;
+        
         tbody.innerHTML = '';
+        
+        if (snapshot.empty) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">Aucune vente</td></tr>';
+            return;
+        }
         
         snapshot.forEach(doc => {
             const sale = doc.data();
@@ -483,11 +642,15 @@ async function loadHistory() {
             tbody.appendChild(row);
         });
     } catch (error) {
-        console.error('Erreur chargement historique:', error);
+        console.error('❌ Erreur chargement historique:', error);
     }
 }
 
-// Charger dashboard
+// ===========================================
+// TABLEAU DE BORD
+// ===========================================
+
+// Charger le dashboard
 async function loadDashboard() {
     if (!currentUser || !canAccessFeature(currentPack, 'dashboard_stats')) return;
     
@@ -516,14 +679,10 @@ async function loadDashboard() {
         
         document.getElementById('dailySales').textContent = dailyTotal.toLocaleString() + ' FCFA';
         document.getElementById('monthlySales').textContent = monthlyTotal.toLocaleString() + ' FCFA';
-        document.getElementById('totalSales').textContent = monthlySales.size;
+        document.getElementById('totalSales').textContent = monthlySales.size + ' ventes';
         
-        // Graphiques PREMIUM
-        if (canAccessFeature(currentPack, 'graphiques_avances')) {
-            generateSalesChart();
-        }
     } catch (error) {
-        console.error('Erreur chargement dashboard:', error);
+        console.error('❌ Erreur chargement dashboard:', error);
     }
 }
 
@@ -534,7 +693,7 @@ async function checkLowStock() {
     try {
         const products = await db.collection('products')
             .where('userId', '==', currentUser.uid)
-            .where('stock', '<', 10)
+            .where('stock', '<', 5)
             .get();
             
         document.getElementById('lowStock').textContent = products.size;
@@ -543,95 +702,23 @@ async function checkLowStock() {
             showNotification(`⚠️ ${products.size} produit(s) en stock faible`, 'warning');
         }
     } catch (error) {
-        console.error('Erreur vérification stock:', error);
+        console.error('❌ Erreur vérification stock:', error);
     }
 }
 
-// Générer graphique (PREMIUM)
-function generateSalesChart() {
-    const ctx = document.getElementById('salesChart').getContext('2d');
-    
-    // Récupérer les ventes des 7 derniers jours
-    const last7Days = [];
-    for (let i = 6; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        last7Days.push(date.toLocaleDateString());
-    }
-    
-    new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: last7Days,
-            datasets: [{
-                label: 'Ventes (FCFA)',
-                data: [12000, 15000, 8000, 20000, 18000, 25000, 22000],
-                borderColor: '#3498db',
-                backgroundColor: 'rgba(52, 152, 219, 0.1)',
-                tension: 0.4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                }
-            }
-        }
-    });
-}
+// ===========================================
+// FONCTIONS UTILITAIRES
+// ===========================================
 
-// Export ventes (PREMIUM)
-async function exportSales() {
-    if (!canAccessFeature(currentPack, 'exports')) {
-        showNotification('Fonctionnalité réservée au pack Premium', 'error');
-        return;
-    }
-    
-    try {
-        const sales = await db.collection('sales')
-            .where('userId', '==', currentUser.uid)
-            .orderBy('date', 'desc')
-            .get();
-            
-        let csv = 'Date,Numéro Facture,Total,Articles\n';
-        
-        sales.forEach(doc => {
-            const sale = doc.data();
-            const date = sale.date ? sale.date.toDate().toLocaleDateString() : '';
-            const items = sale.items.map(item => `${item.name} (${item.quantity})`).join(' | ');
-            
-            csv += `"${date}","${sale.invoiceNumber || ''}",${sale.total},"${items}"\n`;
-        });
-        
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `ventes_${new Date().toLocaleDateString()}.csv`;
-        a.click();
-    } catch (error) {
-        console.error('Erreur export:', error);
-        showNotification('Erreur lors de l\'export', 'error');
-    }
-}
-
-// Notification WhatsApp (PREMIUM - simulation)
-function sendWhatsAppNotification(sale) {
-    if (!canAccessFeature(currentPack, 'whatsapp_notif')) return;
-    
-    const message = `Nouvelle vente: ${sale.total.toLocaleString()} FCFA - ${new Date().toLocaleString()}`;
-    console.log('WhatsApp notification:', message);
-    // Intégration API WhatsApp à implémenter
-}
-
-// Notifications UI
+// Notifications
 function showNotification(message, type = 'info') {
     const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
     notification.innerHTML = message;
+    notification.style.borderLeftColor = 
+        type === 'success' ? '#27ae60' : 
+        type === 'error' ? '#e74c3c' : 
+        type === 'warning' ? '#f39c12' : '#3498db';
     
     document.body.appendChild(notification);
     
@@ -714,7 +801,7 @@ async function saveSettings() {
     }
 }
 
-// Impression ticket
+// Impression
 async function printReceipt(saleId) {
     await generateReceipt(saleId);
 }
@@ -722,5 +809,44 @@ async function printReceipt(saleId) {
 function printLastReceipt() {
     if (lastReceipt) {
         printReceipt(lastReceipt.id);
+    } else {
+        showNotification('Aucun ticket récent', 'info');
+    }
+}
+
+// Export (PREMIUM)
+async function exportSales() {
+    if (!canAccessFeature(currentPack, 'exports')) {
+        showNotification('Fonctionnalité réservée au pack Premium', 'error');
+        return;
+    }
+    
+    try {
+        const sales = await db.collection('sales')
+            .where('userId', '==', currentUser.uid)
+            .orderBy('date', 'desc')
+            .get();
+            
+        let csv = 'Date,Numéro Facture,Total,Articles\n';
+        
+        sales.forEach(doc => {
+            const sale = doc.data();
+            const date = sale.date ? sale.date.toDate().toLocaleDateString() : '';
+            const items = sale.items.map(item => `${item.name} (${item.quantity})`).join(' | ');
+            
+            csv += `"${date}","${sale.invoiceNumber || ''}",${sale.total},"${items}"\n`;
+        });
+        
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ventes_${new Date().toLocaleDateString()}.csv`;
+        a.click();
+        
+        showNotification('Export réussi', 'success');
+    } catch (error) {
+        console.error('❌ Erreur export:', error);
+        showNotification('Erreur lors de l\'export', 'error');
     }
 }
