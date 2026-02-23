@@ -9,6 +9,7 @@ let cart = [];
 let currentShop = null;
 let lastReceipt = null;
 let allProducts = []; // cache des produits pour la recherche
+let isRegistering = false; // flag pour éviter la course à l'inscription
 
 // ===========================================
 // INITIALISATION
@@ -35,6 +36,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (user) {
             // Utilisateur connecté
             currentUser = user;
+
+            // Si inscription en cours, attendre que register() finisse d'écrire
+            if (isRegistering) {
+                return;
+            }
             
             // Cacher la page de connexion, afficher le POS
             document.getElementById('authPage').style.display = 'none';
@@ -118,6 +124,8 @@ async function register() {
     try {
         showNotification('Création du compte...', 'info');
         
+        isRegistering = true; // bloquer onAuthStateChanged pendant l'inscription
+        
         // Créer l'utilisateur
         const userCredential = await auth.createUserWithEmailAndPassword(email, password);
         const user = userCredential.user;
@@ -138,10 +146,26 @@ async function register() {
             phone: '',
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
+
+        isRegistering = false; // débloquer
+        currentUser = user;
+
+        // Déclencher manuellement l'interface avec le bon pack
+        document.getElementById('authPage').style.display = 'none';
+        document.getElementById('posInterface').style.display = 'block';
+        document.getElementById('logoutBtn').style.display = 'inline-block';
+
+        await loadUserData(user.uid);
+        loadProducts();
+        loadHistory();
+
+        if (canAccessFeature(currentPack, 'alertes_stock')) checkLowStock();
+        if (canAccessFeature(currentPack, 'dashboard_stats')) loadDashboard();
         
         showNotification('Compte créé avec succès !', 'success');
         
     } catch (error) {
+        isRegistering = false;
         let message = 'Erreur création compte';
         if (error.code === 'auth/email-already-in-use') message = 'Cet email est déjà utilisé';
         if (error.code === 'auth/invalid-email') message = 'Email invalide';
