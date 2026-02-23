@@ -8,12 +8,25 @@ let currentPack = PACKS.STARTER;
 let cart = [];
 let currentShop = null;
 let lastReceipt = null;
+let allProducts = []; // cache des produits pour la recherche
 
 // ===========================================
 // INITIALISATION
 // ===========================================
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 POS Africa démarré');
+
+    // Écouteur pour la recherche de produits
+    const searchInput = document.getElementById('searchProduct');
+    if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            const query = searchInput.value.toLowerCase().trim();
+            const filtered = query
+                ? allProducts.filter(p => p.name.toLowerCase().includes(query))
+                : allProducts;
+            displayProducts(filtered);
+        });
+    }
     
     // Vérifier session utilisateur
     auth.onAuthStateChanged(async (user) => {
@@ -177,6 +190,12 @@ async function loadUserData(userId) {
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });
             currentPack = PACKS.STARTER;
+            document.getElementById('currentPack').textContent = 'Starter';
+            document.getElementById('userInfo').innerHTML = `
+                <span>${currentUser.email}</span>
+                <span class="badge badge-starter">STARTER</span>
+            `;
+            updateUIBasedOnPack();
         } else {
             currentPack = userDoc.data().pack || PACKS.STARTER;
             document.getElementById('currentPack').textContent = 
@@ -212,8 +231,8 @@ async function loadUserData(userId) {
 // Mise à jour UI selon pack
 function updateUIBasedOnPack() {
     // Afficher/cacher fonctionnalités selon pack
-    document.getElementById('productsTabBtn').style.display = 
-        canAccessFeature(currentPack, 'gestion_stock') ? 'inline-block' : 'none';
+    // L'onglet Produits est accessible à tous les packs
+    document.getElementById('productsTabBtn').style.display = 'inline-block';
     
     document.getElementById('dashboardTabBtn').style.display = 
         canAccessFeature(currentPack, 'dashboard_stats') ? 'inline-block' : 'none';
@@ -259,6 +278,7 @@ async function loadProducts() {
             products.push({ id: doc.id, ...doc.data() });
         });
         
+        allProducts = products; // mise en cache pour la recherche
         displayProducts(products);
         displayProductsTable(products);
     } catch (error) {
@@ -593,7 +613,7 @@ async function generateReceipt(saleId) {
         receiptWindow.document.close();
         receiptWindow.print();
         
-        lastReceipt = saleData;
+        lastReceipt = { id: saleRef.id, ...sale };
         
     } catch (error) {
         console.error('❌ Erreur génération ticket:', error);
@@ -656,7 +676,7 @@ async function loadDashboard() {
     
     try {
         const now = new Date();
-        const startOfDay = new Date(now.setHours(0,0,0,0));
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         
         // Ventes du jour
@@ -739,6 +759,10 @@ function showTab(tabName) {
         loadDashboard();
     }
     
+    if (tabName === 'settings') {
+        loadSettingsForm();
+    }
+    
     if (tabName === 'products') {
         loadProducts();
     }
@@ -782,6 +806,25 @@ function closeProductModal() {
     document.getElementById('productStock').value = '';
 }
 
+// Charger le formulaire paramètres avec les données actuelles
+async function loadSettingsForm() {
+    if (!currentUser) return;
+    try {
+        const userDoc = await db.collection('users').doc(currentUser.uid).get();
+        if (userDoc.exists) {
+            const data = userDoc.data();
+            document.getElementById('settingShopName').value = data.shopName || '';
+            document.getElementById('settingPhone').value = data.phone || '';
+            document.getElementById('settingAddress').value = data.address || '';
+        }
+        if (canAccessFeature(currentPack, 'multi_boutiques')) {
+            loadStores();
+        }
+    } catch (error) {
+        console.error('❌ Erreur chargement paramètres:', error);
+    }
+}
+
 // Sauvegarde paramètres
 async function saveSettings() {
     const shopName = document.getElementById('settingShopName').value;
@@ -794,6 +837,16 @@ async function saveSettings() {
             phone: phone,
             address: address
         });
+
+        // Mettre à jour aussi la boutique principale
+        if (currentShop?.id) {
+            await db.collection('shops').doc(currentShop.id).update({
+                name: shopName,
+                phone: phone,
+                address: address
+            });
+            currentShop = { ...currentShop, name: shopName, phone, address };
+        }
         
         showNotification('Paramètres sauvegardés', 'success');
     } catch (error) {
@@ -811,6 +864,55 @@ function printLastReceipt() {
         printReceipt(lastReceipt.id);
     } else {
         showNotification('Aucun ticket récent', 'info');
+    }
+}
+
+// Ajouter une boutique (PREMIUM)
+async function addStore() {
+    if (!canAccessFeature(currentPack, 'multi_boutiques')) {
+        showNotification('Fonctionnalité réservée au pack Premium', 'error');
+        return;
+    }
+
+    const name = prompt('Nom de la nouvelle boutique :');
+    if (!name || !name.trim()) return;
+
+    try {
+        await db.collection('shops').add({
+            userId: currentUser.uid,
+            name: name.trim(),
+            address: '',
+            phone: '',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        showNotification('Boutique ajoutée avec succès', 'success');
+        loadStores();
+    } catch (error) {
+        showNotification('Erreur : ' + error.message, 'error');
+    }
+}
+
+// Charger la liste des boutiques (PREMIUM)
+async function loadStores() {
+    if (!canAccessFeature(currentPack, 'multi_boutiques')) return;
+    try {
+        const snapshot = await db.collection('shops')
+            .where('userId', '==', currentUser.uid)
+            .get();
+
+        const container = document.getElementById('storesList');
+        if (!container) return;
+        container.innerHTML = '';
+
+        snapshot.forEach(doc => {
+            const shop = doc.data();
+            const div = document.createElement('div');
+            div.style.cssText = 'padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px;';
+            div.innerHTML = `<strong>${shop.name}</strong> <span style="color:#999; font-size:12px;">${shop.address || ''}</span>`;
+            container.appendChild(div);
+        });
+    } catch (error) {
+        console.error('❌ Erreur chargement boutiques:', error);
     }
 }
 
